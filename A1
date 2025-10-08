@@ -1,0 +1,64 @@
+# streamlit_app.py
+
+import re
+from pathlib import Path
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import numpy as np
+from docling.document_converter import DocumentConverter
+from pysentimiento import create_analyzer
+from wordcloud import WordCloud
+import nltk
+from nltk.corpus import stopwords
+import streamlit as st
+import tempfile
+
+# Baixa stopwords se necessário
+try:
+    stopwords.words('portuguese')
+except LookupError:
+    nltk.download('stopwords')
+    nltk.download('punkt')
+
+# Título do app
+st.title("📊 Análise de Emoções e Nuvem de Palavras - Discurso de Posse")
+
+# Upload do arquivo PDF
+uploaded_file = st.file_uploader("📁 Faça upload do arquivo PDF do discurso", type=["pdf"])
+
+if uploaded_file:
+    # Salvar temporariamente o PDF
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        tmp_file.write(uploaded_file.read())
+        caminho_pdf = Path(tmp_file.name)
+
+    nome_presidente = uploaded_file.name.replace("posse ", "").replace(".pdf", "").title()
+    st.success(f"✅ Arquivo carregado: {uploaded_file.name}")
+
+    # Converter PDF em texto
+    converter = DocumentConverter()
+    result = converter.convert(caminho_pdf)
+    texto_bruto = result.document.export_to_text()
+
+    # Análise de emoções
+    st.subheader("📈 Análise de Emoções no Discurso")
+    emotion_analyzer = create_analyzer(task="emotion", lang="pt")
+    resultado_analise = emotion_analyzer.predict(texto_bruto)
+    probabilidades_emocoes = resultado_analise.probas
+
+    # Mostrar probabilidades
+    st.write("### Probabilidades das Emoções")
+    for emocao, prob in sorted(probabilidades_emocoes.items(), key=lambda item: item[1], reverse=True):
+        st.write(f"**{emocao.capitalize()}**: {prob:.4f}")
+
+    # Gráfico de barras das emoções
+    top_7_emocoes = dict(sorted(probabilidades_emocoes.items(), key=lambda item: item[1], reverse=True)[:7])
+    cores = cm.viridis(np.linspace(0, 1, len(top_7_emocoes)))
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = ax.bar(top_7_emocoes.keys(), top_7_emocoes.values(), color=cores)
+    ax.set_title(f"Análise de Emoções - {nome_presidente}", fontsize=16, fontweight='bold')
+    ax.set_ylabel("Probabilidade (Score 0-1)", fontsize=12)
+    ax.set_ylim(0, max(top_7_emocoes.values()) * 1.15)
+    ax.bar_label(bars, fmt='%.3f', padding=3)
+    ax.grid(axis='y', linestyle='--',
