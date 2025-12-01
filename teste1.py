@@ -20,7 +20,8 @@ with st.sidebar:
     st.write('Este jogo foi desenvolvido para testar conhecimentos sobre o Código Penal Brasileiro.')
     st.write('Observe a nuvem de palavras gerada a partir do caput de um artigo e tente adivinhar qual é o número do artigo!')
     st.write(f'Base de dados: {len(df_artigos)} artigos do Código Penal')
-    st.caption('Projeto desenvolvido para a disciplina Programação para Advogados')
+    st.caption('Projeto desenvolvido para a disciplina Programação para Advogados pela aluna Maryana Cassemiro')
+    st.caption('Supervisor Prof. Josir Gomes')
     st.caption('FGV Direito Rio')
 
 # Define stopwords jurídicas e comuns
