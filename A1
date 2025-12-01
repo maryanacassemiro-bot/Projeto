@@ -1,64 +1,167 @@
-# streamlit_app.py
-
-import re
-from pathlib import Path
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+import pandas as pd
 import numpy as np
-from docling.document_converter import DocumentConverter
-from pysentimiento import create_analyzer
-from wordcloud import WordCloud
-import nltk
-from nltk.corpus import stopwords
 import streamlit as st
-import tempfile
+import random
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
 
-# Baixa stopwords se necessário
-try:
-    stopwords.words('portuguese')
-except LookupError:
-    nltk.download('stopwords')
-    nltk.download('punkt')
+# Carrega o DataFrame com os artigos do Código Penal
+df_artigos = pd.read_csv('artigos_codigo_penal.csv')
 
-# Título do app
-st.title("📊 Análise de Emoções e Nuvem de Palavras - Discurso de Posse")
+# Configuração da página
+st.set_page_config(page_icon='⚖️', page_title="Adivinhe o Artigo")
 
-# Upload do arquivo PDF
-uploaded_file = st.file_uploader("📁 Faça upload do arquivo PDF do discurso", type=["pdf"])
+st.title("⚖️ Adivinhe o Artigo do Código Penal!")
+st.subheader("Teste seus conhecimentos sobre legislação penal brasileira")
 
-if uploaded_file:
-    # Salvar temporariamente o PDF
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-        tmp_file.write(uploaded_file.read())
-        caminho_pdf = Path(tmp_file.name)
+# Sidebar com informações
+with st.sidebar:
+    st.subheader('Sobre o Jogo')
+    st.write('Este jogo foi desenvolvido para testar conhecimentos sobre o Código Penal Brasileiro.')
+    st.write('Observe a nuvem de palavras gerada a partir do caput de um artigo e tente adivinhar qual é o número do artigo!')
+    st.write(f'Base de dados: {len(df_artigos)} artigos do Código Penal')
+    st.caption('Projeto desenvolvido para a disciplina Programação para Advogados')
+    st.caption('FGV Direito Rio')
 
-    nome_presidente = uploaded_file.name.replace("posse ", "").replace(".pdf", "").title()
-    st.success(f"✅ Arquivo carregado: {uploaded_file.name}")
+# Define stopwords jurídicas e comuns
+def stopwords():
+    return set([
+        'a', 'o', 'e', 'de', 'da', 'do', 'em', 'um', 'uma', 'os', 'as', 'dos', 'das',
+        'na', 'no', 'nas', 'nos', 'por', 'para', 'com', 'sem', 'sob', 'ao', 'aos',
+        'à', 'às', 'pelo', 'pela', 'pelos', 'pelas', 'que', 'ou', 'se', 'sua', 'seu',
+        'suas', 'seus', 'quem', 'qual', 'quando', 'onde', 'como', 'ser', 'foi', 'é',
+        'são', 'estar', 'ter', 'ter', 'pode', 'podem', 'deve', 'devem', 'art', 'artigo',
+        'pena', 'código', 'penal', 'lei', 'decreto'
+    ])
 
-    # Converter PDF em texto
-    converter = DocumentConverter()
-    result = converter.convert(caminho_pdf)
-    texto_bruto = result.document.export_to_text()
+# Paletas de cores para nuvem de palavras
+def cores_diferentes():
+    color_palettes = [
+        'viridis', 'winter', 'summer', 'prism', 'Blues', 'Oranges',
+        'GnBu', 'Purples', 'coolwarm', 'cool', 'hsv', 'magma'
+    ]
+    return random.choice(color_palettes)
 
-    # Análise de emoções
-    st.subheader("📈 Análise de Emoções no Discurso")
-    emotion_analyzer = create_analyzer(task="emotion", lang="pt")
-    resultado_analise = emotion_analyzer.predict(texto_bruto)
-    probabilidades_emocoes = resultado_analise.probas
+# Gera nuvem de palavras e opções de resposta
+def gerar_nuvem_e_opcoes(df):
+    artigo = df.sample(1).iloc[0]
+    caput = artigo['caput']
+    numero_correto = str(artigo['numero_artigo'])
+    
+    # Gera nuvem de palavras
+    wordcloud = WordCloud(
+        width=800, 
+        height=400, 
+        background_color='white', 
+        colormap=cores_diferentes(), 
+        stopwords=stopwords(),
+        max_words=50
+    ).generate(caput)
+    
+    # Seleciona 4 números de artigos diferentes como opções incorretas
+    artigos_disponiveis = df[df['numero_artigo'] != artigo['numero_artigo']]['numero_artigo'].unique()
+    
+    if len(artigos_disponiveis) < 4:
+        outros_numeros = artigos_disponiveis.tolist()
+    else:
+        outros_numeros = np.random.choice(artigos_disponiveis, 4, replace=False).tolist()
+    
+    # Converte para string e cria lista de opções
+    outros_numeros = [str(n) for n in outros_numeros]
+    opcoes = outros_numeros + [numero_correto]
+    random.shuffle(opcoes)
+    
+    return wordcloud, numero_correto, opcoes, caput
 
-    # Mostrar probabilidades
-    st.write("### Probabilidades das Emoções")
-    for emocao, prob in sorted(probabilidades_emocoes.items(), key=lambda item: item[1], reverse=True):
-        st.write(f"**{emocao.capitalize()}**: {prob:.4f}")
+# Inicializa estados da sessão
+if 'wordcloud' not in st.session_state:
+    st.session_state.wordcloud = None
 
-    # Gráfico de barras das emoções
-    top_7_emocoes = dict(sorted(probabilidades_emocoes.items(), key=lambda item: item[1], reverse=True)[:7])
-    cores = cm.viridis(np.linspace(0, 1, len(top_7_emocoes)))
+if 'rodada' not in st.session_state:
+    st.session_state.rodada = 1
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    bars = ax.bar(top_7_emocoes.keys(), top_7_emocoes.values(), color=cores)
-    ax.set_title(f"Análise de Emoções - {nome_presidente}", fontsize=16, fontweight='bold')
-    ax.set_ylabel("Probabilidade (Score 0-1)", fontsize=12)
-    ax.set_ylim(0, max(top_7_emocoes.values()) * 1.15)
-    ax.bar_label(bars, fmt='%.3f', padding=3)
-    ax.grid(axis='y', linestyle='--',
+if 'pontuacao' not in st.session_state:
+    st.session_state.pontuacao = 0
+
+if 'numero_correto' not in st.session_state:
+    st.session_state.numero_correto = None
+
+if 'opcoes' not in st.session_state:
+    st.session_state.opcoes = None
+
+if 'caput_completo' not in st.session_state:
+    st.session_state.caput_completo = None
+
+if 'mostrar_caput' not in st.session_state:
+    st.session_state.mostrar_caput = False
+
+# Gera primeira nuvem se necessário
+if st.session_state.wordcloud is None:
+    st.session_state.wordcloud, st.session_state.numero_correto, st.session_state.opcoes, st.session_state.caput_completo = gerar_nuvem_e_opcoes(df_artigos)
+
+# Jogo principal
+if st.session_state.rodada <= 10:
+    st.title(f"🎯 Rodada {st.session_state.rodada} de 10")
+    st.subheader("Analise a nuvem de palavras e adivinhe o número do artigo:")
+    
+    # Exibe pontuação atual
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Pontuação", st.session_state.pontuacao)
+    with col2:
+        st.metric("Rodada", f"{st.session_state.rodada}/10")
+    
+    # Exibe nuvem de palavras
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.imshow(st.session_state.wordcloud, interpolation='bilinear')
+    ax.axis('off')
+    st.pyplot(fig)
+    
+    # Opções de resposta
+    escolha = st.radio("Qual é o número do artigo?", st.session_state.opcoes, key=f"escolha_{st.session_state.rodada}")
+    
+    # Botão para mostrar o caput completo (dica)
+    if st.button("💡 Ver caput completo (perde 2 pontos)", key=f"dica_{st.session_state.rodada}"):
+        st.session_state.mostrar_caput = True
+        st.session_state.pontuacao -= 2
+    
+    if st.session_state.mostrar_caput:
+        st.info(f"**Caput do artigo:** {st.session_state.caput_completo}")
+    
+    # Verificação da resposta
+    if st.button("✅ Verificar Resposta", key=f"verificar_{st.session_state.rodada}"):
+        if escolha == st.session_state.numero_correto:
+            st.success(f"🎉 Parabéns! Você acertou! É o artigo {st.session_state.numero_correto}!")
+            st.session_state.pontuacao += 10
+            st.info(f"**Caput completo:** {st.session_state.caput_completo}")
+        else:
+            st.error(f"❌ Resposta incorreta! O artigo correto é o {st.session_state.numero_correto}.")
+            st.session_state.pontuacao -= 5
+            st.info(f"**Caput completo:** {st.session_state.caput_completo}")
+        
+        st.session_state.rodada += 1
+        st.session_state.mostrar_caput = False
+        
+        if st.session_state.rodada <= 10:
+            st.session_state.wordcloud, st.session_state.numero_correto, st.session_state.opcoes, st.session_state.caput_completo = gerar_nuvem_e_opcoes(df_artigos)
+            st.rerun()
+
+else:
+    # Fim do jogo
+    st.balloons()
+    st.title("🏆 Jogo Finalizado!")
+    st.subheader(f"Sua pontuação final: {st.session_state.pontuacao} pontos")
+    
+    if st.session_state.pontuacao >= 70:
+        st.success("🌟 Excelente! Você domina o Código Penal!")
+    elif st.session_state.pontuacao >= 40:
+        st.info("📚 Bom trabalho! Continue estudando!")
+    else:
+        st.warning("📖 Continue se dedicando aos estudos jurídicos!")
+    
+    if st.button("🔄 Jogar Novamente"):
+        st.session_state.rodada = 1
+        st.session_state.pontuacao = 0
+        st.session_state.wordcloud = None
+        st.session_state.mostrar_caput = False
+        st.rerun()
